@@ -1,0 +1,33 @@
+# ---- 本地凭据与运行数据：绝不入库 ----
+data/
+dist/
+_local_only/
+config.json
+.secrets
+.env
+*.log
+*.jsonl
+
+# ---- 个人骑行数据 / 导出包 ----
+*.fit
+*.gpx
+*.tcx
+*.zip
+*.7z
+*.db
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

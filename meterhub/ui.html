@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>meterhub · 码表数据互传</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e6e8ec; --text:#1c1f23; --dim:#6b7280;
+    --brand:#0f766e; --brand2:#0d9488; --warn:#b45309; --err:#b91c1c; --ok:#15803d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1120px;margin:0 auto;padding:22px 18px 60px}
+  header{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+  header h1{font-size:19px;margin:0;letter-spacing:.3px}
+  header .ver{font-size:12px;color:var(--dim)}
+  .sub{color:var(--dim);margin:0 0 16px;font-size:13px}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:900px){.g2,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:640px){.g2,.g4{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .card h2{font-size:13px;margin:0 0 10px;color:var(--dim);font-weight:600;letter-spacing:.5px}
+  .card h2 .pill{margin-left:6px}
+  select,input[type=text],input[type=password]{width:100%;padding:8px 10px;border:1px solid var(--line);
+    border-radius:7px;background:#fff;color:inherit;font:inherit;outline:none}
+  select:focus,input:focus{border-color:var(--brand2)}
+  .row{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .row>*{flex:1}
+  .row button{flex:0 0 auto}
+  .row .fix{flex:0 0 auto;white-space:nowrap;color:var(--dim);font-size:12px}
+  .tall{margin-top:8px}
+  button{border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer;white-space:nowrap}
+  button.primary{background:var(--brand);color:#fff}
+  button.primary:hover{background:var(--brand2)}
+  button.ghost{background:#eef1f4;color:var(--text)}
+  button.small{padding:6px 12px;font-size:13px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .note{font-size:12px;color:var(--dim);margin-top:8px}
+  .note.warn{color:var(--warn)}
+  .note.bad{color:var(--err)}
+  .actions{display:flex;gap:10px;margin:14px 0 8px;flex-wrap:wrap;align-items:center}
+  #log{background:#0f1720;color:#d7e0ea;border-radius:10px;padding:12px 14px;height:300px;
+       overflow:auto;font:12px/1.65 ui-monospace,Consolas,"Courier New",monospace;white-space:pre-wrap}
+  #log .t{color:#7c8b9c;margin-right:8px}
+  #log .ok{color:#5eead4}
+  #log .bad{color:#fca5a5}
+  /* 上次运行结果：刷新页面后仍然能看到，不会“跑完就没” */
+  #lastRun{display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;
+           border:1px solid var(--line);background:#f7fafc;font-size:13px}
+  #lastRun.show{display:block}
+  #lastRun .head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+  #lastRun .tag{font-size:11px;padding:2px 7px;border-radius:999px;background:#e6eef7;color:var(--brand)}
+  #lastRun .sum{font-weight:600}
+  #lastRun .fail{margin-top:6px;color:#b42318;font-size:12.5px;line-height:1.6;
+                 max-height:120px;overflow:auto;white-space:pre-wrap}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--dim);font-weight:600}
+  .muted{color:var(--dim)}
+  details{margin-top:14px}
+  summary{cursor:pointer;color:var(--brand);font-size:13px}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  @media(max-width:760px){.fields{grid-template-columns:1fr}}
+  .fields label{font-size:12px;color:var(--dim);display:block;margin-bottom:3px}
+  .pill{font-size:11px;padding:1px 8px;border-radius:20px;background:#eef1f4;color:var(--dim);
+        font-weight:500;white-space:nowrap}
+  .pill.on{background:#dcfce7;color:var(--ok)}
+  .pill.off{background:#fee2e2;color:var(--err)}
+  .quick{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .quick button{background:#eef1f4;color:var(--text);font-size:12.5px;padding:6px 11px;border-radius:20px}
+  .quick button:hover{background:#e2e8ee}
+  .quick button.dim{opacity:.5}       /* 有一端没登录：仍可点，但先提示要登哪个 */
+  .mfa{display:none;margin-top:8px;padding:8px;border:1px dashed var(--warn);border-radius:8px}
+  .mfa.show{display:block}
+  .qrbox{display:none;margin-top:6px;text-align:center}
+  .qrbox.show{display:block}
+  .qrbox img{width:168px;height:168px;display:block;margin:0 auto;
+    border:1px solid var(--line);border-radius:10px;background:#fff;padding:4px}
+  .qrstate{font-size:12px;color:var(--dim);margin-top:6px}
+  .qrstate.ok{color:var(--ok)}
+  .qrstate.bad{color:var(--err)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>meterhub · 码表数据互传</h1>
+    <span class="ver" id="ver"></span>
+  </header>
+  <p class="sub">先在各平台登录 → 选来源和目标 → 开始。中间一律过本地 FIT 库，支持试运行（只看不动）。</p>
+
+  <div class="card" style="margin-bottom:14px">
+    <h2>① 登录（token 只存本地 data/config.json，不上传任何服务器）</h2>
+    <div class="grid g4">
+      <div class="card" style="background:#fbfcfd">
+        <h2>行者 <span class="pill" id="p_xz">未登录</span></h2>
+        <div class="qrbox" id="xz_qr_box">
+          <img id="xz_qr_img" alt="行者登录二维码">
+          <div class="qrstate" id="xz_qr_state">用行者 App 扫一扫</div>
+        </div>
+        <div class="row">
+          <button class="primary small" id="xz_login" style="flex:1">显示二维码</button>
+        </div>
+        <div class="note" id="n_xz">行者已关闭短信登录，只能用手机行者 App 扫码</div>
+      </div>
+
+      <div class="card" style="background:#fbfcfd">
+        <h2>iGPSPORT <span class="pill" id="p_igp">未登录</span></h2>
+        <input type="text" id="igp_phone" placeholder="手机号">
+        <div class="row">
+          <input type="text" id="igp_code" placeholder="验证码">
+          <button class="ghost small" id="igp_send">获取</button>
+        </div>
+        <div class="row"><button class="primary small" id="igp_login" style="flex:1">登录 iGPSPORT</button></div>
+        <div class="note" id="n_igp">手机验证码登录</div>
+      </div>
+
+      <div class="card" style="background:#fbfcfd">
+        <h2>佳明 <span class="pill" id="p_garmin">未登录</span></h2>
+        <input type="text" id="garmin_email" placeholder="手机号（中国站就是手机号）">
+        <input type="password" id="garmin_password" placeholder="密码" class="tall">
+        <div class="row"><button class="primary small" id="garmin_login" style="flex:1">登录佳明</button></div>
+        <div class="mfa" id="garmin_mfa">
+          <input type="text" id="garmin_code" placeholder="短信/邮箱收到的验证码">
+          <div class="row"><button class="ghost small" id="garmin_mfa_go" style="flex:1">提交验证码</button></div>
+        </div>
+        <div class="note" id="n_garmin">账号+密码。中国站填手机号（没设邮箱也能登）；开了二次验证会要验证码</div>
+      </div>
+
+      <div class="card" style="background:#fbfcfd">
+        <h2>迈金·顽鹿 <span class="pill" id="p_onelap">未登录</span></h2>
+        <input type="text" id="onelap_account" placeholder="顽鹿账号（手机号/邮箱）">
+        <input type="password" id="onelap_password" placeholder="密码" class="tall">
+        <div class="row"><button class="primary small" id="onelap_login" style="flex:1">登录顽鹿</button></div>
+        <div class="note" id="n_onelap">账号+密码（顽鹿没有短信登录入口）</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h2>② 来源（从这里读）</h2>
+      <select id="source"></select>
+      <div class="note" id="srcNote"></div>
+      <div class="row">
+        <span class="fix">最多</span>
+        <input type="text" id="limit" placeholder="0 = 全部" value="0">
+        <span class="fix">条</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>③ 目标（推到这里）</h2>
+      <select id="target"></select>
+      <div class="note" id="tgtNote"></div>
+      <div class="row">
+        <label class="fix" style="display:flex;gap:6px;align-items:center;flex:0 0 auto">
+          <input type="checkbox" id="skip" checked style="width:auto"> 跳过目标已有
+        </label>
+      </div>
+      <div class="note" id="quickNote"></div>
+      <div class="quick" id="quick"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="go">开始传输</button>
+    <button class="ghost" id="dry">试运行（不写入）</button>
+    <button class="ghost" id="pause" disabled>暂停</button>
+    <button class="ghost" id="stop" disabled>停止</button>
+    <button class="ghost" id="refresh">刷新状态</button>
+    <span class="muted" id="stats"></span>
+  </div>
+  <div class="note" id="ctlNote" style="margin-top:-4px">暂停/停止只在任务运行中可用；当前这条处理完才生效，不会把上传做一半。</div>
+
+  <div id="lastRun"></div>
+
+  <div id="log"></div>
+
+  <!-- 运行历史：每次跑完都留一条，永不覆盖。跑错方向/换方向重跑也能翻回上一次。 -->
+  <div class="card" id="runsCard" style="margin-top:14px">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">
+      <span>运行历史</span>
+      <button class="ghost" id="runsRefresh" style="flex:0 0 auto;padding:4px 10px;font-size:12px">刷新</button>
+    </h2>
+    <table>
+      <thead><tr><th>时间</th><th>方向</th><th>结果</th><th></th></tr></thead>
+      <tbody id="runs"></tbody>
+    </table>
+    <div class="note" id="runsNote">每次运行都留档，点任意一行可以回看那次日志。</div>
+  </div>
+
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h2>④ 手动导入（导出包、码表 SD 卡、单个文件）</h2>
+      <input type="text" id="path" placeholder="例如 ./export.zip 或 ./ACTIVITY">
+      <div class="row">
+        <button class="ghost" id="import">导入到本地库</button>
+        <span class="muted" id="importHint"></span>
+      </div>
+      <div class="note">支持 .fit / .gpx / .tcx、整个文件夹、以及官方导出 zip。</div>
+    </div>
+
+    <div class="card">
+      <h2>⑤ 本地库</h2>
+      <table>
+        <thead><tr><th>时间</th><th>里程</th><th>时长</th><th>来源</th><th>已同步</th></tr></thead>
+        <tbody id="lib"></tbody>
+      </table>
+      <div class="note" id="libNote"></div>
+    </div>
+  </div>
+
+  <details>
+    <summary>高级：直接填 token / 站点</summary>
+    <div class="fields">
+      <div><label>行者 token</label><input type="password" id="xz_token" placeholder="Bearer token"></div>
+      <div><label>iGPSPORT token</label><input type="password" id="igp_token" placeholder="Bearer token"></div>
+      <div><label>iGPSPORT 站点</label>
+        <select id="igp_region">
+          <option value="cn">国内站 prod.zh.igpsport.com</option>
+          <option value="intl">国际站 prod.en.igpsport.com</option>
+        </select>
+      </div>
+      <div><label>佳明站点</label>
+        <select id="garmin_region">
+          <option value="cn">中国站 garmin.cn</option>
+          <option value="intl">国际站 garmin.com</option>
+        </select>
+      </div>
+      <div><label>Strava Client ID</label><input type="text" id="strava_client_id"></div>
+      <div><label>Strava Client Secret</label><input type="password" id="strava_client_secret"></div>
+      <div><label>Strava refresh_token</label><input type="password" id="strava_refresh_token"></div>
+      <div><label>Wahoo Client ID</label><input type="text" id="wahoo_client_id"></div>
+      <div><label>Wahoo Client Secret</label><input type="password" id="wahoo_client_secret"></div>
+      <div><label>Wahoo refresh_token</label><input type="password" id="wahoo_refresh_token"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="save">保存</button>
+      <span class="muted" id="cfgHint"></span>
+    </div>
+  </details>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let state = null, cursor = 0, timer = null;
+
+async function jget(u){ const r = await fetch(u); return r.json(); }
+async function jpost(u, b){ const r = await fetch(u, {method:'POST', headers:{'Content-Type':'application/json'},
+  body: JSON.stringify(b||{})}); return r.json(); }
+
+function fillSelect(sel, list, cap){
+  const keep = sel.value;
+  sel.innerHTML = '';
+  list.filter(a => a.caps.includes(cap)).forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.key;
+    o.textContent = a.name + (a.ready ? '' : '（未登录）');
+    sel.appendChild(o);
+  });
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+
+function note(el, a){
+  el.innerHTML = a ? a.note : '';
+  el.className = 'note' + (a && !a.ready ? ' warn' : '');
+}
+
+function setPill(id, on){
+  const el = $(id);
+  el.textContent = on ? '已登录' : '未登录';
+  el.className = 'pill ' + (on ? 'on' : 'off');
+}
+
+function renderState(){
+  const cfg = state.config;
+  $('ver').textContent = 'v' + cfg.version + ' · 本地库 ' + state.stats.count + ' 条 / ' + state.stats.km + ' km';
+  $('stats').textContent = state.stats.count ? ('库里 ' + state.stats.first + ' ~ ' + state.stats.last) : '库里还没有记录';
+  setPill('p_xz', cfg.xz); setPill('p_igp', cfg.igp);
+  setPill('p_garmin', cfg.garmin); setPill('p_onelap', cfg.onelap);
+  if (cfg.igp_phone && !$('igp_phone').value) $('igp_phone').value = cfg.igp_phone;
+  if (cfg.garmin_email && !$('garmin_email').value) $('garmin_email').value = cfg.garmin_email;
+  if (cfg.onelap_account && !$('onelap_account').value) $('onelap_account').value = cfg.onelap_account;
+  fillSelect($('source'), state.adapters, 'pull');
+  fillSelect($('target'), state.adapters, 'push');
+  syncNotes();
+}
+
+function syncNotes(){
+  const s = state.adapters.find(a => a.key === $('source').value);
+  const t = state.adapters.find(a => a.key === $('target').value);
+  note($('srcNote'), s); note($('tgtNote'), t);
+}
+
+function addLog(l){
+  const ok = /成功|完成|新增|命中/.test(l.msg), bad = /失败|中止|错误|拒绝/.test(l.msg);
+  const d = document.createElement('div');
+  d.innerHTML = '<span class="t">' + l.t + '</span>' +
+    '<span class="' + (bad ? 'bad' : ok ? 'ok' : '') + '">' + l.msg.replace(/</g,'&lt;') + '</span>';
+  $('log').appendChild(d);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function showResult(r, err, dir){
+  const box = $('lastRun');
+  if (!r && !err){ box.className = ''; return; }
+  let html = '';
+  if (r){
+    const parts = [];
+    if (r.pulled != null) parts.push('拉到 ' + r.pulled + ' 条');
+    if (r.new != null) parts.push('新入库 ' + r.new + ' 条');
+    if (r.pushed != null) parts.push('推送成功 ' + r.pushed + ' 条');
+    if (r.skipped) parts.push('跳过 ' + r.skipped + ' 条');
+    if (r.failed) parts.push('失败 ' + r.failed + ' 条');
+    if (r.seconds) parts.push('耗时 ' + Math.round(r.seconds) + 's');
+    if (r.dry_run) parts.unshift('试运行');
+    const when = (dir ? dir + ' · ' : '') + (r.when ? '上次运行 ' + r.when : '本次结果');
+    html += '<div class="head"><span class="tag">' + when +
+            '</span><span class="sum">' + (r.text || parts.join('，')) + '</span></div>';
+    const errs = r.errors || [];
+    if (errs.length){
+      html += '<div class="fail">' + errs.map(e => '✗ ' + String(e).replace(/</g, '&lt;')).join('\n') + '</div>';
+    }
+  }
+  if (err) html += '<div class="fail">✗ ' + String(err).replace(/</g, '&lt;') + '</div>';
+  box.innerHTML = html;
+  box.className = 'show';
+}
+
+// ---------------- 暂停 / 继续 / 停止 ----------------
+let curPaused = false;
+
+function renderControls(s){
+  const on = !!s.running, stopped = !!s.stopped;
+  curPaused = !!s.paused;
+  $('pause').disabled = !on || stopped;
+  $('stop').disabled = !on || stopped;
+  $('pause').textContent = curPaused ? '继续' : '暂停';
+  $('pause').className = curPaused ? 'primary' : 'ghost';
+  $('ctlNote').textContent = stopped
+    ? '正在停止：等当前这条处理完就结束，已完成的记录不会重复上传。'
+    : on ? (curPaused ? '已暂停：点「继续」接着跑，或点「停止」结束本次任务。'
+                      : '暂停/停止只在任务运行中可用；当前这条处理完才生效，不会把上传做一半。')
+         : '暂停/停止只在任务运行中可用；已完成的记录都留在本地库和运行历史里。';
+}
+
+async function doControl(action){
+  let r;
+  try { r = await jpost('/api/control', {action}); }
+  catch (e) { addLog({t:'', msg:'✗ 控制请求失败：' + e.message}); return; }
+  if (r.error){ addLog({t:'', msg:'✗ ' + r.error}); return; }
+  renderControls({running: true, paused: action === 'pause',
+                  stopped: action === 'stop'});
+}
+
+$('pause').onclick = () => doControl(curPaused ? 'resume' : 'pause');
+$('stop').onclick = () => doControl('stop');
+
+async function poll(){
+  const s = await jget('/api/log?since=' + cursor);
+  s.lines.forEach(addLog);
+  cursor = s.cursor;
+  renderControls(s);
+  if (!s.running){
+    clearInterval(timer); timer = null;
+    $('go').disabled = $('dry').disabled = false;
+    if (s.result || s.error) showResult(s.result, s.error, s.direction);
+    if (s.result) await loadLib();
+    if (s.error) addLog({t:'', msg:'✗ ' + s.error});
+    await loadRuns();
+  }
+}
+
+// ---------------- 运行历史 ----------------
+// 每次运行结束都往 data\runs.jsonl 追加一条，所以“跑完又跑了别的”也不会把上一次顶掉。
+function runSummary(r){
+  const res = r.result || {};
+  if (r.error) return '✗ ' + r.error;
+  if (res.text) return res.text;
+  const parts = [];
+  ['pulled','new','pushed','skipped','failed'].forEach(k => { if (res[k] != null) parts.push(k + '=' + res[k]); });
+  return parts.join(' ') || '（无结果）';
+}
+
+async function loadRuns(){
+  let d;
+  try { d = await jget('/api/runs?limit=30'); } catch (e) { return; }
+  const rows = (d && d.rows) || [];
+  $('runs').innerHTML = rows.map(r => {
+    const res = r.result || {};
+    const bad = !!r.error || res.failed > 0;
+    const pill = (res.aborted) ? '<span class="pill off">平台拒绝</span>'
+               : r.error ? '<span class="pill off">出错</span>'
+               : res.failed > 0 ? '<span class="pill off">有失败</span>'
+               : res.stopped ? '<span class="pill">用户停止</span>'
+               : res.dry_run ? '<span class="pill">试运行</span>'
+               : '<span class="pill on">完成</span>';
+    return '<tr><td>' + (r.saved_at || '') + '</td><td>' + (r.direction || '—') +
+           '</td><td>' + runSummary(r).replace(/</g, '&lt;') + '</td>' +
+           '<td>' + pill + ' <a href="#" data-run="' + r.idx + '" style="color:var(--brand)">日志</a></td></tr>';
+  }).join('');
+  $('runsNote').textContent = rows.length
+    ? ('共 ' + rows.length + ' 次记录，点“日志”回看当时每一步')
+    : '还没有运行记录（跑一次就会出现在这里）';
+  document.querySelectorAll('#runs a[data-run]').forEach(a => {
+    a.onclick = (ev) => { ev.preventDefault(); showRunLog(parseInt(a.dataset.run, 10)); };
+  });
+}
+
+async function showRunLog(idx){
+  try {
+    const r = await jget('/api/runs?idx=' + idx);
+    if (r.error){ return; }
+    $('log').innerHTML = '';
+    cursor = 1e9;                      // 别让轮询把回放的日志又覆盖掉
+    (r.lines || []).forEach(addLog);
+    showResult(r.result, r.error, r.direction);
+    $('log').scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  } catch (e) { /* 忽略 */ }
+}
+
+// 页面打开/刷新时把上一次的运行记录捞回来。
+// 之前 init() 只加载登录状态和库列表，刷新后日志区一片空白，
+// 看起来就像“刚才跑的没了”——其实记录一直在服务端。
+async function loadHistory(){
+  try {
+    const s = await jget('/api/log?since=0');
+    renderControls(s);
+    if (s.running){                     // 还在跑：接着轮询，别丢进度
+      s.lines.forEach(addLog);
+      cursor = s.cursor;
+      $('go').disabled = $('dry').disabled = true;
+      if (timer) clearInterval(timer);
+      timer = setInterval(poll, 700);
+      return;
+    }
+    if (s.result || s.error){
+      showResult(s.result, s.error, s.direction);
+      $('log').innerHTML = '';
+      s.lines.slice(-60).forEach(addLog);   // 只回放最后 60 行，免得刷屏
+      cursor = s.cursor;
+    }
+  } catch (e) { /* 拿不到历史不影响使用 */ }
+  await loadRuns();
+}
+
+async function start(dry){
+  const body = {source: $('source').value, target: $('target').value,
+                limit: parseInt($('limit').value || '0', 10) || 0,
+                skip: $('skip').checked, dry_run: dry};
+  $('log').innerHTML = '';
+  cursor = 0;
+  const r = await jpost('/api/transfer', body);
+  if (r.error){ addLog({t:'', msg:'✗ ' + r.error}); return; }
+  $('go').disabled = $('dry').disabled = true;
+  renderControls({running: true, paused: false});
+  if (timer) clearInterval(timer);
+  timer = setInterval(poll, 700);
+}
+
+async function loadLib(){
+  const d = await jget('/api/library?limit=200');
+  const nameOf = k => SHORT[k] || (k === 'file' ? '文件' : (k === 'strava' ? 'Strava' : (k === 'wahoo' ? 'Wahoo' : k)));
+  $('lib').innerHTML = d.rows.slice(0, 12).map(r =>
+    '<tr><td>' + (r.start || '') + '</td><td>' + (r.distance_km ?? '') + ' km</td><td>' +
+    (r.moving_min ?? '') + ' min</td><td>' + nameOf(r.source) + '</td><td>' +
+    ((r.synced_to || []).map(nameOf).join('、') || '—') + '</td></tr>').join('');
+  $('libNote').textContent = '共 ' + d.stats.count + ' 条，' + d.stats.km + ' km（只列最近 12 条）';
+}
+
+// ---------------- 行者扫码登录 ----------------
+// 行者短信通道已关，只能手机 App 扫：后端生成二维码 -> 用户用行者 App 扫 -> 手机确认
+// -> 前端每 2 秒轮询一次状态，成功后后端已经把 token 落到 config。
+
+let xzTimer = null, xzToken = '', xzDeadline = 0;
+
+function xzStop(){
+  if (xzTimer){ clearInterval(xzTimer); xzTimer = null; }
+}
+
+function xzSay(text, cls){
+  const el = $('xz_qr_state');
+  el.textContent = text;
+  el.className = 'qrstate' + (cls ? ' ' + cls : '');
+}
+
+async function startXzQr(){
+  xzStop();
+  $('xz_login').disabled = true;
+  try{
+    const r = await jpost('/api/xz/qr', {});
+    if (r.error){
+      xzSay('✗ ' + r.error, 'bad');
+      $('xz_qr_box').classList.add('show');
+      $('n_xz').textContent = '✗ ' + r.error;
+      $('n_xz').className = 'note bad';
+      return;
+    }
+    xzToken = r.token;
+    xzDeadline = Date.now() + (r.expires_in || 120) * 1000;
+    $('xz_qr_img').src = r.svg;
+    $('xz_qr_img').style.opacity = 1;
+    $('xz_qr_box').classList.add('show');
+    xzSay('用行者 App 扫一扫（' + (r.expires_in || 120) + ' 秒内有效）');
+    $('xz_login').textContent = '重新生成';
+    $('n_xz').textContent = '行者已关闭短信登录，只能用手机行者 App 扫码';
+    $('n_xz').className = 'note';
+    xzTimer = setInterval(xzPoll, 2000);
+  }catch(e){
+    xzSay('✗ 生成二维码失败：' + e.message, 'bad');
+  }finally{
+    $('xz_login').disabled = false;
+  }
+}
+
+async function xzPoll(){
+  if (!xzToken) return;
+  if (Date.now() > xzDeadline){
+    xzStop();
+    xzSay('二维码已过期，点「重新生成」', 'bad');
+    return;
+  }
+  let r;
+  try{
+    r = await jpost('/api/xz/qr/poll', {token: xzToken});
+  }catch(e){
+    return;  // 网络抖一下不打断，下一轮再试
+  }
+  if (r.error){
+    xzStop();
+    xzSay('✗ ' + r.error, 'bad');
+    $('n_xz').textContent = '✗ ' + r.error;
+    $('n_xz').className = 'note bad';
+    return;
+  }
+  if (r.state === 'scanned'){
+    xzSay('已扫码，请在手机上点「确认登录」');
+    return;
+  }
+  if (r.state === 'ok'){
+    xzStop();
+    xzSay('✓ 登录成功', 'ok');
+    $('xz_qr_img').style.opacity = 0.12;
+    $('n_xz').textContent = '行者已登录';
+    $('n_xz').className = 'note';
+    state = await jget('/api/state');
+    renderState();
+  }
+}
+
+// ---------------- 登录 ----------------
+
+async function doLogin(platform, extra){
+  const r = await jpost('/api/login', Object.assign({platform}, extra));
+  const nm = {xingzhe:'n_xz', igpsport:'n_igp', garmin:'n_garmin', onelap:'n_onelap'}[platform];
+  if (r.error){
+    $(nm).textContent = '✗ ' + r.error; $(nm).className = 'note bad';
+    if (/验证码|MFA/.test(r.error) && platform === 'garmin') $('garmin_mfa').classList.add('show');
+    return r;
+  }
+  $(nm).textContent = r.message || '成功'; $(nm).className = 'note';
+  if (r.mfa){ $('garmin_mfa').classList.add('show'); }
+  else { $('garmin_mfa').classList.remove('show'); }
+  state = await jget('/api/state'); renderState();
+  return r;
+}
+
+$('xz_login').onclick = () => startXzQr();
+$('igp_send').onclick = () => doLogin('igpsport', {step:'send', phone:$('igp_phone').value.trim(),
+  region:$('igp_region').value || 'cn'});
+$('igp_login').onclick = () => doLogin('igpsport', {phone:$('igp_phone').value.trim(),
+  code:$('igp_code').value.trim(), region:$('igp_region').value || 'cn'});
+$('garmin_login').onclick = () => doLogin('garmin', {account:$('garmin_email').value.trim(),
+  password:$('garmin_password').value, region:$('garmin_region').value || 'cn'});
+$('garmin_mfa_go').onclick = async () => {
+  const r = await jpost('/api/mfa', {code: $('garmin_code').value.trim()});
+  $('n_garmin').textContent = r.error ? ('✗ ' + r.error) : (r.message || '成功');
+  $('n_garmin').className = r.error ? 'note bad' : 'note';
+  if (!r.error){ $('garmin_mfa').classList.remove('show'); state = await jget('/api/state'); renderState(); }
+};
+$('onelap_login').onclick = () => doLogin('onelap', {account:$('onelap_account').value.trim(),
+  password:$('onelap_password').value});
+
+// ---------------- 其它 ----------------
+
+// 四家主力码表。方向不写死，按「谁能读 + 谁能写」自动生成：
+// 行者/迈金/iGPSPORT 都能读，iGPSPORT/迈金/佳明 都能写，所以是 7 个方向。
+// 以后哪家补了读或写能力，按钮会自己多出来。
+const CORE = ['xingzhe', 'igpsport', 'onelap', 'garmin'];
+const SHORT = {xingzhe:'行者', igpsport:'iGPSPORT', onelap:'迈金', garmin:'佳明'};
+
+function renderQuick(){
+  const box = $('quick');
+  box.innerHTML = '';
+  if (!state) return;
+  const by = {};
+  state.adapters.forEach(a => { by[a.key] = a; });
+  const core = CORE.map(k => by[k]).filter(Boolean);
+  let n = 0;
+  core.forEach(s => {
+    if (!s.caps.includes('pull')) return;
+    core.forEach(t => {
+      if (!t.caps.includes('push') || t.key === s.key) return;
+      const b = document.createElement('button');
+      b.textContent = (SHORT[s.key] || s.name) + ' → ' + (SHORT[t.key] || t.name);
+      const miss = [];
+      if (!s.ready) miss.push('来源未登录');
+      if (!t.ready) miss.push('目标未登录');
+      if (miss.length){
+        b.className = 'dim';
+        b.title = miss.join('，') + '（点了也会提示先登录）';
+      }
+      b.onclick = () => { $('source').value = s.key; $('target').value = t.key; syncNotes(); };
+      box.appendChild(b);
+      n++;
+    });
+  });
+  $('quickNote').textContent = n ? ('共 ' + n + ' 个方向，点一下自动选好来源和目标') : '还没有可用的方向';
+}
+
+async function init(){
+  state = await jget('/api/state');
+  renderState();
+  renderQuick();
+  const cfg = state.config;
+  ['strava_client_id','wahoo_client_id'].forEach(k => { if ($(k)) $(k).value = cfg[k] || ''; });
+  if ($('igp_region')) $('igp_region').value = cfg.igp_region || 'cn';
+  if ($('garmin_region')) $('garmin_region').value = cfg.garmin_region || 'cn';
+  await loadLib();
+  await loadHistory();
+}
+
+$('source').onchange = syncNotes;
+$('target').onchange = syncNotes;
+$('go').onclick = () => start(false);
+$('dry').onclick = () => start(true);
+$('refresh').onclick = init;
+$('runsRefresh').onclick = loadRuns;
+$('save').onclick = async () => {
+  const keys = ['xz_token','igp_token','igp_region','garmin_region',
+                'strava_client_id','strava_client_secret','strava_refresh_token',
+                'wahoo_client_id','wahoo_client_secret','wahoo_refresh_token'];
+  const body = {};
+  keys.forEach(k => { const v = ($(k).value || '').trim(); if (v) body[k] = v; });
+  const r = await jpost('/api/config', body);
+  $('cfgHint').textContent = r.ok ? '已保存' : '保存失败';
+  state = await jget('/api/state'); renderState();
+};
+$('import').onclick = async () => {
+  const p = ($('path').value || '').trim();
+  if (!p){ $('importHint').textContent = '请先填路径'; return; }
+  $('log').innerHTML = ''; cursor = 0;
+  const r = await jpost('/api/import', {path: p});
+  if (r.error){ addLog({t:'', msg:'✗ ' + r.error}); return; }
+  $('go').disabled = $('dry').disabled = true;
+  renderControls({running: true, paused: false});
+  if (timer) clearInterval(timer);
+  timer = setInterval(poll, 700);
+};
+init();
+</script>
+</body>
+</html>

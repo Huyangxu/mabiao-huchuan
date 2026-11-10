@@ -1,0 +1,4 @@
+# 联网部分需要 TLS 指纹，避免被平台网关直接 403。
+# FIT/GPX/TCX 解析、转换、本地库、Web 界面全部只用标准库。
+# 二维码库 segno 1.6.6 已内置在 meterhub/_vendor/segno（BSD），无需安装。
+curl_cffi==0.17.0
