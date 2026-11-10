@@ -5,7 +5,13 @@
 
 ## 快速开始
 
+项目主页：**https://github.com/Huyangxu/mabiao-huchuan** · [MIT](LICENSE) · 欢迎提 issue / PR
+
 ```bash
+git clone https://github.com/Huyangxu/mabiao-huchuan.git
+cd mabiao-huchuan
+pip install -r requirements.txt      # 联网部分需要 curl_cffi 的 TLS 指纹，防 403
+
 python -m meterhub                    # 打开本地界面 http://127.0.0.1:8788
 python -m meterhub state              # 看各平台配置状态
 python -m meterhub transfer xingzhe igpsport --limit 5
@@ -13,13 +19,9 @@ python -m meterhub import ./export.zip
 python -m meterhub lib
 ```
 
-安装依赖（联网部分需要 `curl_cffi` 的 TLS 指纹，防 403）：
-
-```bash
-pip install -r requirements.txt
-```
-
-离线部分（FIT/GPX/TCX 解析、转换、入库、导出）**只用标准库**，不装任何东西也能跑。
+不想用 git 也可以在仓库页点 **Code → Download ZIP**，解压后同样从上面的
+`pip install` 开始。离线部分（FIT/GPX/TCX 解析、转换、入库、导出）**只用标准库**，
+不装任何东西也能跑。
 
 ## 架构
 
