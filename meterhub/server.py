@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 import webbrowser
@@ -16,6 +17,18 @@ from urllib.parse import parse_qs, urlparse
 from . import adapters, config, login, pipeline, store
 
 HERE = Path(__file__).resolve().parent
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # 浏览器刷新/关标签会掐断正在写的响应（WinError 10053/10054），
+        # 不是程序错误，别在双击启动的黑窗口里刷一屏 traceback。
+        if isinstance(sys.exc_info()[1],
+                      (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class Runner:
@@ -371,7 +384,7 @@ class Handler(BaseHTTPRequestHandler):
 def main(open_browser: bool = True, port: int = 0) -> int:
     port = port or int(config.load().get('port') or 8788)
     load_last_run()          # 上次跑的结果先捞回来，界面刷新/重启都不会“一片空白”
-    srv = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    srv = _Server(('127.0.0.1', port), Handler)
     url = f'http://127.0.0.1:{port}/'
     print(f'meterhub v{config.VERSION}  数据目录：{config.home()}')
     print(f'界面：{url}   （Ctrl+C 退出）')

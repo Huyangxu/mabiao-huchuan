@@ -126,8 +126,10 @@ def main(argv=None) -> int:
 
     a = ap.parse_args(argv)
     if not getattr(a, 'cmd', None):
-        ap.print_help()
-        return 2
+        # 不带子命令时直接打开本地界面（README 与模块文档都是这么写的）
+        a.port = 0
+        a.no_browser = False
+        return cmd_serve(a)
     return a.fn(a)
 
 

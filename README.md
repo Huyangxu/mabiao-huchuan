@@ -23,9 +23,31 @@ python -m meterhub import ./export.zip
 python -m meterhub lib
 ```
 
-不想用 git 也可以在仓库页点 **Code → Download ZIP**，解压后同样从上面的
-`pip install` 开始。离线部分（FIT/GPX/TCX 解析、转换、入库、导出）**只用标准库**，
-不装任何东西也能跑。
+### 用 Code → Download ZIP 下载的源码包
+
+1. 解压，进到**能看到 `meterhub/` 文件夹和 `requirements.txt` 的那一层**
+   （GitHub 的 ZIP 会多套一层 `mabiao-huchuan-master/`，要进到里面去）。
+2. Windows 直接双击 **`start.bat`** 即可：它检查 Python、缺依赖时自动装
+   `curl_cffi`，然后启动界面。
+3. 浏览器打开 **http://127.0.0.1:8788**（程序会尝试自动打开）；
+   停服务在窗口里按 `Ctrl+C`。
+
+等价的命令行方式，在解压根目录执行：
+
+```bash
+python -m pip install -r requirements.txt   # 只联网传输需要
+python -m meterhub                          # 等价于 python -m meterhub serve
+python -m meterhub serve --port 8799         # 8788 被占用时换端口
+```
+
+> Windows 装了多个 Python 时，`python` 可能不是你装依赖的那个（比如被编辑器自带的
+> 版本抢先）。把命令里的 `python` 换成 `py -3`，或直接写解释器完整路径即可；
+> `start.bat` 已经优先用 `py -3`。
+
+ZIP 里**没有** `data/config.json`（凭据不该进仓库）：首次打开界面后，在页面底部
+登录区按平台登录，配置才会写到解压目录下的 `data/`，骑行记录、运行历史也在那里，
+不用时删掉整个文件夹即可。离线部分（FIT/GPX/TCX 解析、转换、入库、导出）
+**只用标准库**，不装任何东西也能跑；联网传输才需要 `curl_cffi` 的 TLS 指纹防 403。
 
 ## 架构
 
