@@ -12,21 +12,29 @@
           成功返回 code=200「全部文件上传成功」，data.success_count / failed_count。
           ⚠️ 页头还残留一个旧上传入口，字段名是 `jilu`（无序号），服务端**不认**，
           会回 422「没有上传文件」。早期曾照抄这段旧代码，误判成「平台封禁」。
-  列表    POST https://u.onelap.cn/api/otm/ride_record/list
-          （未登录返回 403 Authorization fail，说明路径真实存在；body 待真实账号定型）
+  列表    POST https://u.onelap.cn/api/otm/ride_record/capability_list
+          {"uid": ..., "page": n}，固定 20 条/页，按 data.data.total 翻页读全。
+  详情    GET  https://u.onelap.cn/api/otm/ride_record/analysis/{_id}
+          -> data.ridingRecord.{fitUrl, fileKey, durl}
+  下载    GET  https://u.onelap.cn/api/otm/ride_record/analysis/fit_content/{key}
+          key = **base64(fitUrl)**（前端 api chunk 里
+          `btoa(unescape(encodeURIComponent(t)))`），不是记录 id；
+          返回 application/octet-stream 的原始 FIT。
+          早期按 `?id=` 拼 download/fit、或直接取 durl（fits.rfsvr.net 签名直链）
+          都拿不到文件：前者 404、后者 CDN 也回 404。
 
-已知不确定点：列表接口的 body 字段和返回结构官方没公开，网上脚本各写各的。
-这里按几种常见形态依次试，并把原始返回打到日志里，方便用真实账号一次定型。
-
-实测：用 `jilu0` 上传真实 FIT 成功（code=200，success_count=1），
-用 `jilu` 则稳定 422。同一 token、同一文件、同一客户端只差字段名，结论可复现。
+依据：官网前端 bundle 的 api / recordDownload / details 三个 chunk 反查，并用真实
+账号逐条实测（fit_content 返回 282971 字节、头含 .FIT，解析出 9749 个轨迹点）。
+上传实测：`jilu0` 成功（code=200，success_count=1），`jilu` 稳定 422。
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import time
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from .. import config, net
 from ..fitlib import Activity, Point, build_fit
@@ -59,8 +67,8 @@ class Onelap(Adapter):
     name = '迈金 顽鹿'
     caps = ('pull', 'push')
     needs = ('onelap_account', 'onelap_password')
-    note = ('账号+密码登录。上传 FIT 已验证；读取历史记录依赖顽鹿列表接口，'
-            '首次用真实账号跑一遍即可定型。')
+    note = ('账号+密码登录。读（原始 FIT 下载）与写（上传 FIT）都已实测；'
+            '列表按 total 翻页读全，去重只认云端实况。')
 
     # existing() 会把云端列表读全后置 True。pipeline 只有在 True 时才敢忽略
     # 本地「已同步」标记、完全按云端实况去重（否则宁可保守，避免重复上传）。
@@ -406,50 +414,59 @@ class Onelap(Adapter):
         return out
 
     def _one(self, row: dict, log=None) -> Ride | None:
-        """下载单条 FIT 再解析。下载地址优先用列表里的字段，取不到就按 id 拼。"""
-        rid = str(_first(row, ('_id', 'id', 'recordId', 'record_id', 'rideId', 'ride_id')) or '')
-        urls: list[str] = []
-        for k in ('durl', 'fileUrl', 'fitUrl', 'downloadUrl', 'url', 'file_url'):
-            v = row.get(k)
-            if isinstance(v, str) and v.startswith('http'):
-                urls.append(v)
-        # capability_list 不带 durl；官网详情页会再查一次 analysis 取签名直链。
-        # 目前这些 durl 返回 404（顽鹿 CDN 侧），保留这一步便于对方恢复后直接可用。
-        if rid:
+        """下载单条原始 FIT 再解析。
+
+        官网前端链路：analysis/{_id} 拿 fitUrl → fit_content/{base64(fitUrl)} 下文件。
+        路径参数是 fitUrl 的 base64，不是记录 id；下载用 GET，不是 POST。
+        """
+        rid = str(_first(row, ('_id', 'id', 'recordId', 'record_id',
+                               'rideId', 'ride_id')) or '')
+        fit_key = str(_first(row, ('fitUrl', 'fileKey', 'fit_url', 'file_key')) or '')
+        durl = str(_first(row, ('durl', 'downloadUrl', 'fileUrl')) or '')
+
+        if rid and (not fit_key or not durl):
             try:
                 info = net.get(f'{UP}/api/otm/ride_record/analysis/{rid}',
                                headers=self._hdr()).json()
                 rr = ((info.get('data') or {}).get('ridingRecord') or {})
-                v = rr.get('durl')
-                if isinstance(v, str) and v.startswith('http'):
-                    urls.append(v)
-                if rr.get('fileKey'):
-                    row = {**row, 'fileKey': rr['fileKey']}
-            except Exception:
-                pass
-        if rid:
-            urls += [
-                f'{UP}/api/otm/ride_record/download/fit?id={rid}',
-                f'{UP}/api/otm/ride_record/download?id={rid}',
-                f'{UP}/api/otm/ride_record/fit?id={rid}',
-            ]
+                if not fit_key:
+                    fit_key = str(_first(rr, ('fitUrl', 'fileKey',
+                                              'fit_url', 'file_key')) or '')
+                if not durl:
+                    durl = str(rr.get('durl') or '')
+                # 详情里的标题/日期更准，补回 row（不覆盖列表已有值）
+                for k in ('name', 'title', 'date', 'totalDistance'):
+                    if rr.get(k) not in (None, '') and row.get(k) in (None, ''):
+                        row = {**row, k: rr[k]}
+            except Exception as exc:
+                if log:
+                    log(f'（顽鹿详情 analysis/{rid} 读取失败：{exc}）')
+
+        if not fit_key:
+            raise RuntimeError(
+                f'顽鹿这条记录没有 fitUrl（手动录入/第三方同步的记录可能没有原始文件）：{rid}')
+
+        hdr = {**self._hdr(), 'Accept': '*/*'}
+        urls = [fit_content_url(fit_key)]
+        if durl.startswith('http'):
+            urls.append(durl)          # 签名直链当前 404，留作 CDN 恢复后的兜底
 
         blob = None
         err = ''
         for u in urls:
             try:
-                r = net.post(u, headers=self._hdr()) if 'onelap' in u else net.get(u)
-                if r.status_code == 200 and r.content[:1] in (b'\x0e', b'\x0c'):
+                r = net.get(u, headers=hdr)   # 必须 GET：fit_content 不接受 POST
+                if r.status_code == 200 and _is_fit(r.content):
                     blob = r.content
                     break
-                err = f'{u} -> HTTP {r.status_code}'
+                err = f'{u.split("?")[0][:100]} -> HTTP {r.status_code}'
             except Exception as exc:
-                err = f'{u} -> {exc}'
+                err = f'{u.split("?")[0][:100]} -> {exc}'
         if blob is None:
             raise RuntimeError(f'拿不到 FIT（{err}）')
 
         from .. import bundle
-        fname = str(_first(row, ('fileKey', 'fileName', 'filename')) or f'{rid}.fit')
+        fname = fit_key.rsplit('/', 1)[-1] or f'{rid}.fit'
         if not fname.lower().endswith(('.fit', '.gpx', '.tcx')):
             fname += '.fit'
         ride = bundle._read_bytes(fname, blob)
@@ -465,6 +482,24 @@ class Onelap(Adapter):
         from ..model import BJ
         day = ride.start.astimezone(BJ).strftime('%Y-%m-%d') if ride.start else ''
         return f'{day}|{int(round(ride.distance_m / 10.0))}'
+
+
+# ---------------- FIT 下载辅助 ----------------
+
+def fit_content_url(fit_key: str) -> str:
+    """官网前端：`fit_content/` 后接的是 fitUrl 的 base64，不是记录 id。
+
+    前端 api chunk：downloadFit = GET fit_content/${btoa(unescape(encodeURIComponent(t)))}。
+    base64 里的 / 和 + 做 URL 转义后服务端同样接受（实测原始/转义/urlsafe 均可）。
+    """
+    key = quote(base64.b64encode(fit_key.encode('utf-8')).decode('ascii'), safe='')
+    return f'{UP}/api/otm/ride_record/analysis/fit_content/{key}'
+
+
+def _is_fit(blob: bytes) -> bool:
+    """FIT 头：首字节是 header 长度，8~12 字节是 .FIT 魔数。"""
+    return (len(blob) > 100
+            and (b'.FIT' in blob[:16] or blob[:1] in (b'\x0e', b'\x0c')))
 
 
 # ---------------- 解析辅助 ----------------

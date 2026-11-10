@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-VERSION = "0.8"
+VERSION = "0.9"
 
 SECRET_KEYS = (
     'xz_token', 'xz_phone', 'igp_token', 'igp_region', 'igp_phone',

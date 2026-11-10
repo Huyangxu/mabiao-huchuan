@@ -294,6 +294,54 @@ def main() -> int:
     finally:
         OL.net.multipart, OL.Onelap._state = old_mp, old_state2
 
+    # 下载链路：官网前端是 fit_content/{base64(fitUrl)}，不是 ?id= 拼的旧接口
+    import base64 as _b64
+    import urllib.parse as _up
+    fitkey = 'geo/20261110/Fit_demo.fit'
+    fu = OL.fit_content_url(fitkey)
+    check('顽鹿下载走 analysis/fit_content',
+          '/api/otm/ride_record/analysis/fit_content/' in fu)
+    check('路径参数是 fitUrl 的 base64',
+          _b64.b64encode(fitkey.encode()).decode() in _up.unquote(fu))
+    check('不再用 ?id= 拼旧下载接口',
+          '?id=' not in fu and 'download/fit' not in fu)
+    check('FIT 头能被识别',
+          OL._is_fit(b'\x0e\x10>\x08KQ\x04\x00.FIT' + b'0' * 200))
+    check('404 JSON 不会被误当成 FIT',
+          not OL._is_fit(b'{"error":"no file"}'))
+
+    # _one() 端到端（全 mock，不发网络）：验证确实 GET fit_content 拿到 FIT
+    class _DlResp:
+        def __init__(self, content, payload):
+            self.status_code = 200
+            self.content = content
+            self.text = ''
+            self._p = payload
+        def json(self):
+            return self._p
+    rid = '6af331c5fdf418346c0274d6'   # 虚构 id，仅用于断言
+    called = []
+    fake_ride = sample(3)
+    old_get, old_state3, old_read = OL.net.get, OL.Onelap._state, bundle._read_bytes
+    def _fake_get(url, headers=None, **kw):
+        called.append(url)
+        if url.endswith('/analysis/' + rid):
+            return _DlResp(b'{}', {'data': {'ridingRecord': {'fitUrl': fitkey}}})
+        return _DlResp(b'\x0e\x10>\x08KQ\x04\x00.FIT' + b'0' * 300, {})
+    OL.net.get = _fake_get
+    OL.Onelap._state = lambda self: {'token': 't', 'refresh': '', 'uid': '1'}
+    bundle._read_bytes = lambda name, blob: fake_ride
+    try:
+        got = OL.Onelap()._one({'_id': rid})
+        check('_one 请求 fit_content（GET）',
+              any('/analysis/fit_content/' in u for u in called))
+        check('_one 不再请求 ?id= 旧接口',
+              not any('?id=' in u or 'download/fit' in u for u in called))
+        check('_one 返回解析后的 Ride', got is fake_ride and got.sid == rid)
+    finally:
+        OL.net.get, OL.Onelap._state = old_get, old_state3
+        bundle._read_bytes = old_read
+
     # ---- 行者扫码：内容格式 + 二维码渲染（不发网络请求）----
     from meterhub import login as LG
     print('[11] 行者扫码登录')
